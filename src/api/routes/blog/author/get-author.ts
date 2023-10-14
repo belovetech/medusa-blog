@@ -3,20 +3,20 @@ import { EntityManager } from 'typeorm';
 import AuthorService from '../../../../services/author';
 import { TResponse } from '../types';
 
-export default async function createAuthor(req: Request, res: Response) {
+export default async function getAuthor(req: Request, res: Response) {
   const authorService: AuthorService = req.scope.resolve('authorService');
   const manager: EntityManager = req.scope.resolve('manager');
 
-  const author = await manager.transaction(async (transactionManager) => {
+  const authors = await manager.transaction(async (transactionManager) => {
     return await authorService
       .withTransaction(transactionManager)
-      .create(req.body);
+      .list(req.query);
   });
 
-  const response: TResponse<typeof author> = {
-    message: 'Author created successfully',
-    data: author,
+  const response: TResponse<typeof authors> = {
+    message: 'Fetch Authors successfully',
+    data: authors,
   };
 
-  res.status(201).json(response);
+  res.status(200).json(response);
 }

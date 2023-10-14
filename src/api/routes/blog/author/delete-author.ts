@@ -2,21 +2,21 @@ import { Request, Response } from 'express';
 import { EntityManager } from 'typeorm';
 import AuthorService from '../../../../services/author';
 import { TResponse } from '../types';
+import { Author } from '../../../../models/author';
 
-export default async function createAuthor(req: Request, res: Response) {
+export default async function deleteAuthors(req: Request, res: Response) {
   const authorService: AuthorService = req.scope.resolve('authorService');
   const manager: EntityManager = req.scope.resolve('manager');
 
-  const author = await manager.transaction(async (transactionManager) => {
+  await manager.transaction(async (transactionManager) => {
     return await authorService
       .withTransaction(transactionManager)
-      .create(req.body);
+      .delete(req.params.id);
   });
 
-  const response: TResponse<typeof author> = {
-    message: 'Author created successfully',
-    data: author,
+  const response: TResponse<Author> = {
+    message: `Author with id: ${req.params.id} was deleted successfully`,
   };
 
-  res.status(201).json(response);
+  res.status(204).json(response);
 }
