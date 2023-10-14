@@ -13,7 +13,10 @@ export class Post extends BaseEntity {
   @Column({ type: 'varchar' })
   author_id: string;
 
-  @ManyToOne(() => Author, (author) => author.blogs)
+  @ManyToOne(() => Author, (author) => author.posts, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  })
   @JoinColumn({ name: 'author_id' })
   author: Author;
 

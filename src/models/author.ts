@@ -10,10 +10,8 @@ export class Author extends BaseEntity {
   @Column()
   email: string;
 
-  @OneToMany(() => Post, (post) => post.author, {
-    cascade: ['update', 'remove'],
-  })
-  blogs: Post[];
+  @OneToMany(() => Post, (post) => post.author, { cascade: true })
+  posts: Post[];
 
   @BeforeInsert()
   private beforeInsert(): void {
