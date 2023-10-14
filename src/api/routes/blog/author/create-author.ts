@@ -21,9 +21,13 @@ export default async function createAuthor(req: Request, res: Response) {
 
     res.status(201).json(response);
   } catch (error) {
-    res.status(+error.code).json({
-      ...error,
-      message: JSON.parse(error.message),
-    });
+    if (+error.code === 400) {
+      res.status(+error.code).json({
+        ...error,
+        message: JSON.parse(error.message),
+      });
+    } else {
+      res.status(+error.code).json(error);
+    }
   }
 }
