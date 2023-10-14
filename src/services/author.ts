@@ -25,32 +25,35 @@ class AuthorService extends TransactionBaseService {
   async create(data: Partial<Author>): Promise<Author> {
     return await this.atomicPhase_(
       async (transactionManager: EntityManager) => {
-        try {
-          const authorRepo = transactionManager.withRepository(
-            this.authorRepository_
-          );
+        const authorRepo = transactionManager.withRepository(
+          this.authorRepository_
+        );
 
-          const query = buildQuery({ email: data.email });
-          const authorExist = await authorRepo.findOne(query);
-
-          if (authorExist) {
-            throw new MedusaError(
-              MedusaError.Types.CONFLICT,
-              `Author with email "${data.email}" already exists.`
-            );
-          }
-
-          const author = await authorRepo.create(data);
-          const result = await authorRepo.save(author);
-
-          return result;
-        } catch (error) {
+        if (Object.keys(this.validateAuthor(data)).length > 0) {
           throw new MedusaError(
-            'Internal Server Error',
-            error.message,
-            'create author failed'
+            MedusaError.Types.INVALID_DATA,
+            JSON.stringify(this.validateAuthor(data)),
+            '400'
           );
         }
+
+        const query = buildQuery({ email: data.email });
+        const authorExist = await authorRepo.findOne(query);
+
+        if (authorExist) {
+          throw new MedusaError(
+            MedusaError.Types.CONFLICT,
+            `Author with email "${data.email}" already exists.`,
+            '409'
+          );
+        }
+
+        const author = authorRepo.create();
+        author.name = data.name;
+        author.email = data.email;
+        const result = await authorRepo.save(author);
+
+        return result;
       }
     );
   }
@@ -72,9 +75,9 @@ class AuthorService extends TransactionBaseService {
       return await authorRepo.findAndCount(query);
     } catch (error) {
       throw new MedusaError(
-        'Internal Server Error',
+        'Unable to fetch authors',
         error.message,
-        'ListAndCount authors failed'
+        error.code ?? '500'
       );
     }
   }
@@ -92,9 +95,9 @@ class AuthorService extends TransactionBaseService {
       return authors;
     } catch (error) {
       throw new MedusaError(
-        'Internal Server Error',
+        'Unable to fetch authors',
         error.message,
-        'List author failed'
+        error.code ?? '500'
       );
     }
   }
@@ -118,9 +121,9 @@ class AuthorService extends TransactionBaseService {
       return author;
     } catch (error) {
       throw new MedusaError(
-        'Internal Server Error',
+        'Unable to retrieve authors',
         error.message,
-        'Unable to retrieve author'
+        error.code ?? '500'
       );
     }
   }
@@ -140,9 +143,9 @@ class AuthorService extends TransactionBaseService {
       );
     } catch (error) {
       throw new MedusaError(
-        'Internal Server Error',
+        'Unable to update author',
         error.message,
-        'Unable to update author'
+        error.code ?? '500'
       );
     }
   }
@@ -161,11 +164,26 @@ class AuthorService extends TransactionBaseService {
       );
     } catch (error) {
       throw new MedusaError(
-        'Internal Server Error',
+        'Unable to delete author',
         error.message,
-        'Unable to delete author'
+        error.code ?? '500'
       );
     }
+  }
+
+  private validateAuthor(data: Partial<Author>): { [key: string]: string } {
+    let errors: { [key: string]: string } = {};
+    if (!data.name || data.name.length < 3) {
+      errors.name = 'Author name is required';
+    }
+
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+
+    if (!data.email || !emailRegex.test(data.email)) {
+      errors.email = 'Valid email is required';
+    }
+
+    return errors;
   }
 }
 

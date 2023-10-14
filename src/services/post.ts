@@ -27,22 +27,23 @@ class PostService extends TransactionBaseService {
   async create(data: CreatePostDto): Promise<Post> {
     return this.atomicPhase_(async (transactionManager) => {
       const postRepo = transactionManager.withRepository(this.postRepository_);
-      try {
-        const post = postRepo.create();
 
-        post.title = data.title;
-        post.content = data.content;
-        post.author_id = data.author_id;
+      const post = postRepo.create();
 
-        const result = await postRepo.save(post);
-        return result;
-      } catch (error) {
+      if (Object.keys(this.validatePost(data)).length > 0) {
         throw new MedusaError(
-          'Internal Server Error',
-          error.message,
-          'create post failed'
+          MedusaError.Types.INVALID_DATA,
+          JSON.stringify(this.validatePost(data)),
+          '400'
         );
       }
+
+      post.title = data.title;
+      post.content = data.content;
+      post.author_id = data.author_id;
+
+      const result = await postRepo.save(post);
+      return result;
     });
   }
 
@@ -59,11 +60,7 @@ class PostService extends TransactionBaseService {
       const query = buildQuery(selector, config);
       return await postRepo.findAndCount(query);
     } catch (error) {
-      throw new MedusaError(
-        'Internal Server Error',
-        error.message,
-        'ListAndCount post failed'
-      );
+      throw new MedusaError('Unable to fetch posts', error.message, '500');
     }
   }
 
@@ -79,11 +76,7 @@ class PostService extends TransactionBaseService {
       const [posts] = await this.listAndCount(selector, config);
       return posts;
     } catch (error) {
-      throw new MedusaError(
-        'Internal Server Error',
-        error.message,
-        'List post failed'
-      );
+      throw new MedusaError('Unable to fetch posts', error.message, '500');
     }
   }
 
@@ -103,11 +96,7 @@ class PostService extends TransactionBaseService {
 
       return post;
     } catch (error) {
-      throw new MedusaError(
-        'Internal Server Error',
-        error.message,
-        'Unable to retrieve post'
-      );
+      throw new MedusaError('Unable to retrieve posts', error.message, '500');
     }
   }
 
@@ -124,11 +113,7 @@ class PostService extends TransactionBaseService {
           Object.assign(post, data);
           return await postRepo.save(post);
         } catch (error) {
-          throw new MedusaError(
-            'Internal Server Error',
-            error.message,
-            'Unable to update post'
-          );
+          throw new MedusaError('Unable to update posts', error.message, '500');
         }
       }
     );
@@ -145,14 +130,26 @@ class PostService extends TransactionBaseService {
           const post = await this.retrieve(id);
           await postRepo.remove(post);
         } catch (error) {
-          throw new MedusaError(
-            'Internal Server Error',
-            error.message,
-            'Unable to delete author'
-          );
+          throw new MedusaError('Unable to delete posts', error.message, '500');
         }
       }
     );
+  }
+
+  private validatePost(data: CreatePostDto): { [key: string]: string } {
+    let errors: { [key: string]: string } = {};
+    if (!data.title || data.title.length < 3) {
+      errors.title = 'Title is required';
+    }
+
+    if (!data.content || data.content.length < 3) {
+      errors.content = 'Content is required';
+    }
+
+    if (!data.author_id) {
+      errors.author_id = 'Author is required';
+    }
+    return errors;
   }
 }
 
