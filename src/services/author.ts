@@ -6,28 +6,45 @@ import {
 } from '@medusajs/medusa';
 import { EntityManager } from 'typeorm';
 import { MedusaError } from '@medusajs/utils';
-import { AuthorRepository } from '../repositories';
+import AuthorRepository from '../repositories/author';
 import { Author } from '../models/author';
 
+type InjectedDependencies = {
+  manager: EntityManager;
+  authorRepository: typeof AuthorRepository;
+};
+
 class AuthorService extends TransactionBaseService {
-  protected manager_: EntityManager;
-  protected transactionManager_: EntityManager;
   protected authorRepository_: typeof AuthorRepository;
 
-  constructor(container) {
-    super(container);
-    this.authorRepository_ = container.AuthorRepository;
+  constructor({ authorRepository }: InjectedDependencies) {
+    super(arguments[0]);
+    this.authorRepository_ = authorRepository;
   }
 
   async create(data: Partial<Author>): Promise<Author> {
-    return this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        const authorRepo = transactionManager.withRepository(
+          this.authorRepository_
+        );
 
-      const author = await authorRepo.create(data);
-      const result = await authorRepo.save(author);
+        const query = buildQuery({ email: data.email });
+        const existing = await authorRepo.findOne(query);
 
-      return result;
-    });
+        if (existing) {
+          throw new MedusaError(
+            MedusaError.Types.CONFLICT,
+            `Author with email "${data.email}" already exists.`
+          );
+        }
+
+        const author = await authorRepo.create(data);
+        const result = await authorRepo.save(author);
+
+        return result;
+      }
+    );
   }
 
   async listAndCount(
@@ -38,12 +55,12 @@ class AuthorService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<[Author[], number]> {
-    const authorRepo = await this.activeManager_.withRepository(
+    const authorRepo = this.activeManager_.withRepository(
       this.authorRepository_
     );
 
     const query = buildQuery(selector, config);
-    return authorRepo.findAndCount(query);
+    return await authorRepo.findAndCount(query);
   }
 
   async list(
@@ -77,38 +94,46 @@ class AuthorService extends TransactionBaseService {
   }
 
   async update(id: string, data: Omit<Partial<Author>, 'id'>): Promise<Author> {
-    return await this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
-
-      const author = await this.retrieve(id);
-
-      if (!author) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `author with id: ${id} was not found`
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        const authorRepo = transactionManager.withRepository(
+          this.authorRepository_
         );
-      }
 
-      Object.assign(author, data);
-      return await authorRepo.save(author);
-    });
+        const author = await this.retrieve(id);
+
+        if (!author) {
+          throw new MedusaError(
+            MedusaError.Types.NOT_FOUND,
+            `author with id: ${id} was not found`
+          );
+        }
+
+        Object.assign(author, data);
+        return await authorRepo.save(author);
+      }
+    );
   }
 
   async delete(id: string): Promise<void> {
-    return await this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
-
-      const author = await this.retrieve(id);
-
-      if (!author) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `author with id: ${id} was not found`
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        const authorRepo = transactionManager.withRepository(
+          this.authorRepository_
         );
-      }
 
-      await authorRepo.remove(author);
-    });
+        const author = await this.retrieve(id);
+
+        if (!author) {
+          throw new MedusaError(
+            MedusaError.Types.NOT_FOUND,
+            `author with id: ${id} was not found`
+          );
+        }
+
+        await authorRepo.remove(author);
+      }
+    );
   }
 }
 

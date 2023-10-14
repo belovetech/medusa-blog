@@ -5,9 +5,9 @@ import {
   buildQuery,
 } from '@medusajs/medusa';
 import { MedusaError } from '@medusajs/utils';
-import { PostRepository } from '../repositories';
+import PostRepository from '../repositories/post';
 import { Post } from '../models/post';
-import { CreatePostDto} from 'src/types/post';
+import { CreatePostDto } from 'src/types/post';
 
 class PostService extends TransactionBaseService {
   protected postRepository_: typeof PostRepository;
