@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { wrapHandler } from '@medusajs/medusa';
 import authorRoute from './author';
+import postRoute from './post';
 import customRouteHandler from './custom-route-handler';
 
 const router = Router();
@@ -14,4 +15,5 @@ export function attachBlogRoutes(blogRouter: Router) {
 
   // Attach routes for blog experience, defined separately
   authorRoute(blogRouter);
+  postRoute(blogRouter);
 }

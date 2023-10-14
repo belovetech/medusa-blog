@@ -4,30 +4,45 @@ import {
   Selector,
   buildQuery,
 } from '@medusajs/medusa';
+import { EntityManager } from 'typeorm';
 import { MedusaError } from '@medusajs/utils';
 import PostRepository from '../repositories/post';
 import { Post } from '../models/post';
-import { CreatePostDto } from 'src/types/post';
+import { CreatePostDto } from '../types/post';
+
+type InjectedDependencies = {
+  manager: EntityManager;
+  postRepository: typeof PostRepository;
+};
 
 class PostService extends TransactionBaseService {
   protected postRepository_: typeof PostRepository;
-  constructor(container) {
-    super(container);
 
-    this.postRepository_ = container.postRepository;
+  constructor({ postRepository }: InjectedDependencies) {
+    super(arguments[0]);
+
+    this.postRepository_ = postRepository;
   }
 
   async create(data: CreatePostDto): Promise<Post> {
-    return this.atomicPhase_(async (manager) => {
-      const postRepo = manager.withRepository(this.postRepository_);
-      const post = await postRepo.create();
+    return this.atomicPhase_(async (transactionManager) => {
+      const postRepo = transactionManager.withRepository(this.postRepository_);
+      try {
+        const post = postRepo.create();
 
-      post.title = data.title;
-      post.content = data.content;
-      post.author_id = data.author_id;
+        post.title = data.title;
+        post.content = data.content;
+        post.author_id = data.author_id;
 
-      const result = await postRepo.save(post);
-      return result;
+        const result = await postRepo.save(post);
+        return result;
+      } catch (error) {
+        throw new MedusaError(
+          'Internal Server Error',
+          error.message,
+          'create post failed'
+        );
+      }
     });
   }
 
@@ -39,12 +54,17 @@ class PostService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<[Post[], number]> {
-    const postRepo = await this.activeManager_.withRepository(
-      this.postRepository_
-    );
-
-    const query = buildQuery(selector, config);
-    return postRepo.findAndCount(query);
+    try {
+      const postRepo = this.activeManager_.withRepository(this.postRepository_);
+      const query = buildQuery(selector, config);
+      return await postRepo.findAndCount(query);
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'ListAndCount post failed'
+      );
+    }
   }
 
   async list(
@@ -55,61 +75,84 @@ class PostService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<Post[]> {
-    const [posts] = await this.listAndCount(selector, config);
-    return posts;
+    try {
+      const [posts] = await this.listAndCount(selector, config);
+      return posts;
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'List post failed'
+      );
+    }
   }
 
   async retrieve(id: string, config?: FindConfig<Post>): Promise<Post> {
-    const postRepo = await this.activeManager_.withRepository(
-      this.postRepository_
-    );
+    try {
+      const postRepo = this.activeManager_.withRepository(this.postRepository_);
 
-    const query = buildQuery({ id }, config);
-    const post = await postRepo.findOne(query);
+      const query = buildQuery({ id }, config);
+      const post = await postRepo.findOne(query);
 
-    if (!post) {
+      if (!post) {
+        throw new MedusaError(
+          MedusaError.Types.NOT_FOUND,
+          `Post with id: ${id} was not found`
+        );
+      }
+
+      return post;
+    } catch (error) {
       throw new MedusaError(
-        MedusaError.Types.NOT_FOUND,
-        `Post with id: ${id} was not found`
+        'Internal Server Error',
+        error.message,
+        'Unable to retrieve post'
       );
     }
-
-    return post;
   }
 
   async update(id: string, data: Omit<Partial<Post>, 'id'>): Promise<Post> {
-    return await this.atomicPhase_(async (manager) => {
-      const postRepo = manager.withRepository(this.postRepository_);
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        try {
+          const postRepo = transactionManager.withRepository(
+            this.postRepository_
+          );
 
-      const post = await this.retrieve(id);
+          const post = await this.retrieve(id);
 
-      if (!post) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `Post with id: ${id} was not found`
-        );
+          Object.assign(post, data);
+          return await postRepo.save(post);
+        } catch (error) {
+          throw new MedusaError(
+            'Internal Server Error',
+            error.message,
+            'Unable to update post'
+          );
+        }
       }
-
-      Object.assign(post, data);
-      return await postRepo.save(post);
-    });
+    );
   }
 
   async delete(id: string): Promise<void> {
-    return await this.atomicPhase_(async (manager) => {
-      const postRepo = manager.withRepository(this.postRepository_);
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        try {
+          const postRepo = transactionManager.withRepository(
+            this.postRepository_
+          );
 
-      const post = await this.retrieve(id);
-
-      if (!post) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `Post with id: ${id} was not found`
-        );
+          const post = await this.retrieve(id);
+          await postRepo.remove(post);
+        } catch (error) {
+          throw new MedusaError(
+            'Internal Server Error',
+            error.message,
+            'Unable to delete author'
+          );
+        }
       }
-
-      await postRepo.remove(post);
-    });
+    );
   }
 }
 

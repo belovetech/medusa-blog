@@ -1,4 +1,5 @@
 export type TResponse<T> = {
   message: string;
-  data: T;
+  results?: number;
+  data?: T;
 };

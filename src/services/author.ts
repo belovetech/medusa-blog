@@ -25,24 +25,32 @@ class AuthorService extends TransactionBaseService {
   async create(data: Partial<Author>): Promise<Author> {
     return await this.atomicPhase_(
       async (transactionManager: EntityManager) => {
-        const authorRepo = transactionManager.withRepository(
-          this.authorRepository_
-        );
+        try {
+          const authorRepo = transactionManager.withRepository(
+            this.authorRepository_
+          );
 
-        const query = buildQuery({ email: data.email });
-        const existing = await authorRepo.findOne(query);
+          const query = buildQuery({ email: data.email });
+          const authorExist = await authorRepo.findOne(query);
 
-        if (existing) {
+          if (authorExist) {
+            throw new MedusaError(
+              MedusaError.Types.CONFLICT,
+              `Author with email "${data.email}" already exists.`
+            );
+          }
+
+          const author = await authorRepo.create(data);
+          const result = await authorRepo.save(author);
+
+          return result;
+        } catch (error) {
           throw new MedusaError(
-            MedusaError.Types.CONFLICT,
-            `Author with email "${data.email}" already exists.`
+            'Internal Server Error',
+            error.message,
+            'create author failed'
           );
         }
-
-        const author = await authorRepo.create(data);
-        const result = await authorRepo.save(author);
-
-        return result;
       }
     );
   }
@@ -55,12 +63,20 @@ class AuthorService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<[Author[], number]> {
-    const authorRepo = this.activeManager_.withRepository(
-      this.authorRepository_
-    );
+    try {
+      const authorRepo = this.activeManager_.withRepository(
+        this.authorRepository_
+      );
 
-    const query = buildQuery(selector, config);
-    return await authorRepo.findAndCount(query);
+      const query = buildQuery(selector, config);
+      return await authorRepo.findAndCount(query);
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'ListAndCount authors failed'
+      );
+    }
   }
 
   async list(
@@ -71,69 +87,85 @@ class AuthorService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<Author[]> {
-    const [authors] = await this.listAndCount(selector, config);
-    return authors;
+    try {
+      const [authors] = await this.listAndCount(selector, config);
+      return authors;
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'List author failed'
+      );
+    }
   }
 
   async retrieve(id: string, config?: FindConfig<Author>): Promise<Author> {
-    const authorRepo = this.activeManager_.withRepository(
-      this.authorRepository_
-    );
+    try {
+      const authorRepo = this.activeManager_.withRepository(
+        this.authorRepository_
+      );
 
-    const query = buildQuery({ id }, config);
-    const author = await authorRepo.findOne(query);
+      const query = buildQuery({ id }, config);
+      const author = await authorRepo.findOne(query);
 
-    if (!author) {
+      if (!author) {
+        throw new MedusaError(
+          MedusaError.Types.NOT_FOUND,
+          `author with id: ${id} was not found`
+        );
+      }
+
+      return author;
+    } catch (error) {
       throw new MedusaError(
-        MedusaError.Types.NOT_FOUND,
-        `author with id: ${id} was not found`
+        'Internal Server Error',
+        error.message,
+        'Unable to retrieve author'
       );
     }
-
-    return author;
   }
 
   async update(id: string, data: Omit<Partial<Author>, 'id'>): Promise<Author> {
-    return await this.atomicPhase_(
-      async (transactionManager: EntityManager) => {
-        const authorRepo = transactionManager.withRepository(
-          this.authorRepository_
-        );
-
-        const author = await this.retrieve(id);
-
-        if (!author) {
-          throw new MedusaError(
-            MedusaError.Types.NOT_FOUND,
-            `author with id: ${id} was not found`
+    try {
+      return await this.atomicPhase_(
+        async (transactionManager: EntityManager) => {
+          const authorRepo = transactionManager.withRepository(
+            this.authorRepository_
           );
-        }
 
-        Object.assign(author, data);
-        return await authorRepo.save(author);
-      }
-    );
+          const author = await this.retrieve(id);
+          Object.assign(author, data);
+          return await authorRepo.save(author);
+        }
+      );
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'Unable to update author'
+      );
+    }
   }
 
   async delete(id: string): Promise<void> {
-    return await this.atomicPhase_(
-      async (transactionManager: EntityManager) => {
-        const authorRepo = transactionManager.withRepository(
-          this.authorRepository_
-        );
-
-        const author = await this.retrieve(id);
-
-        if (!author) {
-          throw new MedusaError(
-            MedusaError.Types.NOT_FOUND,
-            `author with id: ${id} was not found`
+    try {
+      return await this.atomicPhase_(
+        async (transactionManager: EntityManager) => {
+          const authorRepo = transactionManager.withRepository(
+            this.authorRepository_
           );
-        }
 
-        await authorRepo.remove(author);
-      }
-    );
+          const author = await this.retrieve(id);
+          await authorRepo.remove(author);
+        }
+      );
+    } catch (error) {
+      throw new MedusaError(
+        'Internal Server Error',
+        error.message,
+        'Unable to delete author'
+      );
+    }
   }
 }
 
