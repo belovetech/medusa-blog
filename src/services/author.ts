@@ -6,28 +6,56 @@ import {
 } from '@medusajs/medusa';
 import { EntityManager } from 'typeorm';
 import { MedusaError } from '@medusajs/utils';
-import { AuthorRepository } from '../repositories';
+import AuthorRepository from '../repositories/author';
 import { Author } from '../models/author';
 
+type InjectedDependencies = {
+  manager: EntityManager;
+  authorRepository: typeof AuthorRepository;
+};
+
 class AuthorService extends TransactionBaseService {
-  protected manager_: EntityManager;
-  protected transactionManager_: EntityManager;
   protected authorRepository_: typeof AuthorRepository;
 
-  constructor(container) {
-    super(container);
-    this.authorRepository_ = container.AuthorRepository;
+  constructor({ authorRepository }: InjectedDependencies) {
+    super(arguments[0]);
+    this.authorRepository_ = authorRepository;
   }
 
   async create(data: Partial<Author>): Promise<Author> {
-    return this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
+    return await this.atomicPhase_(
+      async (transactionManager: EntityManager) => {
+        const authorRepo = transactionManager.withRepository(
+          this.authorRepository_
+        );
 
-      const author = await authorRepo.create(data);
-      const result = await authorRepo.save(author);
+        if (Object.keys(this.validateAuthor(data)).length > 0) {
+          throw new MedusaError(
+            MedusaError.Types.INVALID_DATA,
+            JSON.stringify(this.validateAuthor(data)),
+            '400'
+          );
+        }
 
-      return result;
-    });
+        const query = buildQuery({ email: data.email });
+        const authorExist = await authorRepo.findOne(query);
+
+        if (authorExist) {
+          throw new MedusaError(
+            MedusaError.Types.CONFLICT,
+            `Author with email "${data.email}" already exists.`,
+            '409'
+          );
+        }
+
+        const author = authorRepo.create();
+        author.name = data.name;
+        author.email = data.email;
+        const result = await authorRepo.save(author);
+
+        return result;
+      }
+    );
   }
 
   async listAndCount(
@@ -38,12 +66,20 @@ class AuthorService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<[Author[], number]> {
-    const authorRepo = await this.activeManager_.withRepository(
-      this.authorRepository_
-    );
+    try {
+      const authorRepo = this.activeManager_.withRepository(
+        this.authorRepository_
+      );
 
-    const query = buildQuery(selector, config);
-    return authorRepo.findAndCount(query);
+      const query = buildQuery(selector, config);
+      return await authorRepo.findAndCount(query);
+    } catch (error) {
+      throw new MedusaError(
+        'Unable to fetch authors',
+        error.message,
+        error.code ?? '500'
+      );
+    }
   }
 
   async list(
@@ -54,61 +90,100 @@ class AuthorService extends TransactionBaseService {
       skip: 0,
     }
   ): Promise<Author[]> {
-    const [authors] = await this.listAndCount(selector, config);
-    return authors;
+    try {
+      const [authors] = await this.listAndCount(selector, config);
+      return authors;
+    } catch (error) {
+      throw new MedusaError(
+        'Unable to fetch authors',
+        error.message,
+        error.code ?? '500'
+      );
+    }
   }
 
   async retrieve(id: string, config?: FindConfig<Author>): Promise<Author> {
-    const authorRepo = this.activeManager_.withRepository(
-      this.authorRepository_
-    );
+    try {
+      const authorRepo = this.activeManager_.withRepository(
+        this.authorRepository_
+      );
 
-    const query = buildQuery({ id }, config);
-    const author = await authorRepo.findOne(query);
+      const query = buildQuery({ id }, config);
+      const author = await authorRepo.findOne(query);
 
-    if (!author) {
+      if (!author) {
+        throw new MedusaError(
+          MedusaError.Types.NOT_FOUND,
+          `author with id: ${id} was not found`
+        );
+      }
+
+      return author;
+    } catch (error) {
       throw new MedusaError(
-        MedusaError.Types.NOT_FOUND,
-        `author with id: ${id} was not found`
+        'Unable to retrieve authors',
+        error.message,
+        error.code ?? '500'
       );
     }
-
-    return author;
   }
 
   async update(id: string, data: Omit<Partial<Author>, 'id'>): Promise<Author> {
-    return await this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
+    try {
+      return await this.atomicPhase_(
+        async (transactionManager: EntityManager) => {
+          const authorRepo = transactionManager.withRepository(
+            this.authorRepository_
+          );
 
-      const author = await this.retrieve(id);
-
-      if (!author) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `author with id: ${id} was not found`
-        );
-      }
-
-      Object.assign(author, data);
-      return await authorRepo.save(author);
-    });
+          const author = await this.retrieve(id);
+          Object.assign(author, data);
+          return await authorRepo.save(author);
+        }
+      );
+    } catch (error) {
+      throw new MedusaError(
+        'Unable to update author',
+        error.message,
+        error.code ?? '500'
+      );
+    }
   }
 
   async delete(id: string): Promise<void> {
-    return await this.atomicPhase_(async (manager) => {
-      const authorRepo = manager.withRepository(this.authorRepository_);
+    try {
+      return await this.atomicPhase_(
+        async (transactionManager: EntityManager) => {
+          const authorRepo = transactionManager.withRepository(
+            this.authorRepository_
+          );
 
-      const author = await this.retrieve(id);
+          const author = await this.retrieve(id);
+          await authorRepo.remove(author);
+        }
+      );
+    } catch (error) {
+      throw new MedusaError(
+        'Unable to delete author',
+        error.message,
+        error.code ?? '500'
+      );
+    }
+  }
 
-      if (!author) {
-        throw new MedusaError(
-          MedusaError.Types.NOT_FOUND,
-          `author with id: ${id} was not found`
-        );
-      }
+  private validateAuthor(data: Partial<Author>): { [key: string]: string } {
+    let errors: { [key: string]: string } = {};
+    if (!data.name || data.name.length < 3) {
+      errors.name = 'Author name is required';
+    }
 
-      await authorRepo.remove(author);
-    });
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+
+    if (!data.email || !emailRegex.test(data.email)) {
+      errors.email = 'Valid email is required';
+    }
+
+    return errors;
   }
 }
 

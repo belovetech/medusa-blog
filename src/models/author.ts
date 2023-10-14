@@ -7,7 +7,7 @@ export class Author extends BaseEntity {
   @Column()
   name: string;
 
-  @Column()
+  @Column({ unique: true })
   email: string;
 
   @OneToMany(() => Post, (post) => post.author, { cascade: true })
