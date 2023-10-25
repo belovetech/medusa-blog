@@ -1,6 +1,8 @@
-require('dotenv').config();
-const { DataSource } = require('typeorm');
+const dotenv = require('dotenv');
 
+dotenv.config({ path: process.cwd() + '/' + '.env' });
+
+const { DataSource } = require('typeorm');
 
 const AppDataSource = new DataSource({
   type: 'postgres',
